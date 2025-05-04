@@ -49,7 +49,7 @@ def scrape(start_url, start_folder):
     try:
         while queue:
             count += 1
-            item = queue.pop()  # LIFO to keep list small
+            item = queue.pop(0)  # LIFO to keep list small
             url  = item['url']
             path = item['path']
 
@@ -101,8 +101,8 @@ def scrape(start_url, start_folder):
             else:
                 print(f"[!][?] Unknown object type at {url}", file=sys.stderr)
 
-            # every 10 items, save state
-            if count % 10 == 0:
+            # every 30 items, save state
+            if count % 30 == 0:
                 save_json_atomic(
                     [{'path': str(i['path']), 'url': i['url']} for i in queue],
                     queue_file
