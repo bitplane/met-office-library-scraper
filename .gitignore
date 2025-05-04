@@ -3,4 +3,5 @@
 *.json
 *.bak
 *.tmp
+*.tar
 .venv
