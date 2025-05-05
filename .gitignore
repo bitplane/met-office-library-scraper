@@ -4,4 +4,8 @@
 *.bak
 *.tmp
 *.tar
+*.log
+*.webp
+*.jpg
+*.png
 .venv
