@@ -23,13 +23,13 @@ fi
 
 # Check if input file exists and is a PDF
 if [ ! -f "$1" ] || [[ $(file -b --mime-type "$1") != "application/pdf" ]]; then
-    echo "Error: $1 is not a valid PDF file"
+    echo -e "${RED}Error: $1 is not a valid PDF file${RESET}"
     exit 1
 fi
 
 # Check if GNU parallel is installed
 if ! command -v parallel &> /dev/null; then
-    echo "Error: GNU parallel is not installed. Please install it first."
+    echo -e "${RED}Error: GNU parallel is not installed. Please install it first.${RESET}"
     exit 1
 fi
 
@@ -52,8 +52,12 @@ mkdir -p "$TEMP_DIR"
 # Extract images
 pdfimages -all "$INPUT_PDF" "$TEMP_DIR/img"
 
+# Count extracted images
+NUM_IMAGES=$(find "$TEMP_DIR" -type f | wc -l)
+echo -e " - Extracted ${YELLOW}$NUM_IMAGES${RESET} images"
+
 # Check if any images were extracted
-if [ ! "$(ls -A "$TEMP_DIR")" ]; then
+if [ $NUM_IMAGES -eq 0 ]; then
     echo -e " - ${RED}No images found in PDF. Nothing to compress.${RESET}"
     rmdir "$TEMP_DIR"
     exit 0
@@ -68,19 +72,15 @@ convert_image() {
     # Skip if not a regular file
     [ -f "$img" ] || return
     
-    # Get width safely with error handling
-    WIDTH=$(identify -format "%w" "$img" 2>/dev/null || echo "0")
-    
-    # Skip if we couldn't get width
-    if [ -z "$WIDTH" ] || [ "$WIDTH" = "0" ]; then
-        return
-    fi
-    
-    if [ "$WIDTH" -gt "$max_width" ]; then
+    # Try conversion
+    if [ "$max_width" -gt 0 ]; then
         cwebp -q "$quality" -resize "$max_width" 0 "$img" -o "${img}.webp" &>/dev/null
     else
         cwebp -q "$quality" "$img" -o "${img}.webp" &>/dev/null
     fi
+    
+    # Note: We don't delete the original file if conversion fails
+    # This way, we preserve all image data, even formats that can't be converted
 }
 
 # Export the function so parallel can see it
@@ -90,10 +90,18 @@ export -f convert_image
 echo -e " - Processing images in parallel (using ${YELLOW}$PARALLEL_JOBS${RESET} jobs)..."
 find "$TEMP_DIR" -type f | parallel -j "$PARALLEL_JOBS" "convert_image {} $MAX_WIDTH $QUALITY"
 
-# Remove original files, keeping only WebPs
-find "$TEMP_DIR" -type f ! -name "*.webp" -delete
+# Count successful conversions
+WEBP_COUNT=$(find "$TEMP_DIR" -name "*.webp" | wc -l)
+echo -e " - Successfully converted ${YELLOW}$WEBP_COUNT${RESET} out of ${YELLOW}$NUM_IMAGES${RESET} images to WebP"
 
-# Calculate new size
+# Check if any WebP files were created
+if [ $WEBP_COUNT -eq 0 ]; then
+    echo -e " - ${RED}No images could be converted to WebP. Keeping original PDF.${RESET}"
+    rm -rf "$TEMP_DIR"
+    exit 0
+fi
+
+# Calculate new size (including both WebP and original files for those that couldn't be converted)
 NEW_SIZE=$(du -b "$TEMP_DIR" | cut -f1)
 NEW_SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B $NEW_SIZE)
 SAVED_BYTES=$((ORIGINAL_SIZE - NEW_SIZE))
@@ -103,6 +111,13 @@ SAVED_PERCENT=$((SAVED_BYTES * 100 / ORIGINAL_SIZE))
 echo -e " - Compression results:"
 echo -e "   - Original size: ${MAGENTA}$ORIGINAL_SIZE_HUMAN${RESET}, new size: ${MAGENTA}$NEW_SIZE_HUMAN${RESET}, saved: ${GREEN}$SAVED_BYTES_HUMAN${RESET} (${GREEN}$SAVED_PERCENT%${RESET})"
 
+# Check if NEW_SIZE is very small or zero
+if [ $NEW_SIZE -lt 1000 ]; then
+    echo -e " - ${RED}Output size suspiciously small (${NEW_SIZE}B). Keeping original PDF.${RESET}"
+    rm -rf "$TEMP_DIR"
+    exit 0
+fi
+
 # Check if savings are worth it (< 25%)
 if [ $SAVED_PERCENT -lt 25 ]; then
     echo -e " - ${RED}Space savings less than 25%. Keeping original PDF.${RESET}"
@@ -111,8 +126,15 @@ if [ $SAVED_PERCENT -lt 25 ]; then
 fi
 
 # Create archive
-echo -e " - Archiving compressed images"
+echo -e " - Archiving all images (originals and WebP)"
 tar -cf "$ARCHIVE" -C "$TEMP_DIR" .
+
+# Check if archive was created successfully
+if [ ! -f "$ARCHIVE" ] || [ ! -s "$ARCHIVE" ]; then
+    echo -e " - ${RED}Failed to create archive or archive is empty. Keeping original PDF.${RESET}"
+    rm -rf "$TEMP_DIR"
+    exit 0
+fi
 
 # Clean up
 rm -rf "$TEMP_DIR"
