@@ -1,0 +1,1 @@
+apt-get update && apt-get install -y poppler-utils webp parallel coreutils tar bc file moreutils bsdmainutils

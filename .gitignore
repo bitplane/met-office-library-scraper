@@ -9,3 +9,8 @@
 *.jpg
 *.png
 .venv
+*.docx
+*.xls*
+*.stderr
+*.txt
+*.gz
