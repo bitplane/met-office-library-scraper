@@ -128,8 +128,6 @@ def scrape(start_url, start_folder):
         queue_file.unlink(missing_ok=True)
 
     save_json_atomic(list(seen_urls), seen_file)
-    if not queue:
-        seen_file.unlink(missing_ok=True)
 
     print("Done. Queue empty and state files cleaned up.")
 
